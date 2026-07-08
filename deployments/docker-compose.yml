@@ -92,6 +92,7 @@ services:
       MAX_BATCH_SIZE: "1000"
       MAX_BODY_BYTES: "1048576"
       REQUEST_TIMEOUT: "5s"
+      MAX_IN_FLIGHT_REQUESTS: "256"
       SPOOL_DIR: "/tmp/log-service-spool"
       SPOOL_MAX_BYTES: "1073741824"
     volumes:
@@ -119,6 +120,9 @@ services:
       KAFKA_DLQ_TOPIC: "logs.dlq"
       KAFKA_CONSUMER_GROUP: "log-workers"
       ELASTICSEARCH_URL: "http://elasticsearch:9200"
+      SPOOL_DIR: "/tmp/log-service-worker-spool"
+    volumes:
+      - log-worker-spool:/tmp/log-service-worker-spool
     depends_on:
       kafka:
         condition: service_healthy
@@ -170,3 +174,4 @@ volumes:
   kafka-data:
   elasticsearch-data:
   log-api-spool:
+  log-worker-spool:

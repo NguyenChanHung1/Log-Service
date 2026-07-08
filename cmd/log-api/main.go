@@ -32,6 +32,7 @@ func main() {
 
 	apiMetrics := metrics.NewCounters("log-api")
 	spooler := spool.NewWriter(cfg.SpoolDir, cfg.SpoolMaxBytes)
+	apiMetrics.ObserveSpoolState(toMetricSpoolState(spooler.State()))
 	logsHandler := ingestion.NewHandler(ingestion.HandlerOptions{
 		Publisher:      producer,
 		Spooler:        spooler,
@@ -40,7 +41,21 @@ func main() {
 		MaxBodyBytes:   cfg.MaxBodyBytes,
 		MaxBatchSize:   cfg.MaxBatchSize,
 		RequestTimeout: cfg.RequestTimeout,
+		MaxInFlight:    cfg.MaxInFlightRequests,
 	})
+
+	replayer := spool.NewReplayer(spool.ReplayerOptions{
+		Dir:       cfg.SpoolDir,
+		MaxBytes:  cfg.SpoolMaxBytes,
+		Interval:  cfg.SpoolReplayInterval,
+		Publisher: producer,
+		Logger:    logger,
+		OnReplay:  apiMetrics.ObserveReplayed,
+		OnState: func(state spool.State) {
+			apiMetrics.ObserveSpoolState(toMetricSpoolState(state))
+		},
+	})
+	go replayer.Run(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +96,16 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("log api stopped")
+}
+
+func toMetricSpoolState(state spool.State) metrics.SpoolState {
+	return metrics.SpoolState{
+		Dir:       state.Dir,
+		Mode:      state.Mode,
+		UsedBytes: state.UsedBytes,
+		MaxBytes:  state.MaxBytes,
+		FileCount: state.FileCount,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

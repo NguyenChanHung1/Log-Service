@@ -290,6 +290,8 @@ Acceptance checks:
 
 Goal: consume logs from Kafka, parse them, and index them into Elasticsearch.
 
+Status: completed. The worker consumes `logs.raw`, validates raw lines, enriches documents, bulk-indexes to daily Elasticsearch indexes, and commits Kafka offsets after safe handling.
+
 Tasks:
 
 - Implement Kafka consumer group for `logs.raw`.
@@ -322,6 +324,8 @@ Acceptance checks:
 ### WP8: Worker Retry, Replay, And DLQ Handling
 
 Goal: handle bad records and downstream failures predictably without dropping accepted data.
+
+Status: completed. Parse and permanent indexing failures go to `logs.dlq`; temporary Elasticsearch failures retry with backoff, then persist to a durable worker replay spool for later indexing.
 
 Tasks:
 
@@ -365,6 +369,8 @@ Acceptance checks:
 
 Goal: simulate multiple log sources with configurable throughput.
 
+Status: completed. The generator supports configurable target, clients, TPS, duration, batch size, steady mode, burst mode, retries, latency stats, and effective TPS summary.
+
 Tasks:
 
 - Implement command flags:
@@ -404,6 +410,8 @@ Acceptance checks:
 ### WP10: Backpressure, Durable Spooling, And Capacity Controls
 
 Goal: keep the system stable when incoming traffic exceeds processing capacity without casually rejecting logs.
+
+Status: completed. The API has request timeouts, size limits, batch limits, bounded in-flight handoff, durable spool fallback, spool replay, overload mode reporting, and `503 Retry-After` when safe capacity is exhausted.
 
 Rationale:
 
@@ -448,6 +456,8 @@ Acceptance checks:
 ### WP11: Scripts, Documentation, And Final Report
 
 Goal: make the project easy to run, verify, and present.
+
+Status: completed. README, architecture docs, operations docs, report template, demo script, and before/during/after capture scripts are available.
 
 Tasks:
 

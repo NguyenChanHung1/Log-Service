@@ -28,6 +28,9 @@ type Counters struct {
 
 	mu         sync.Mutex
 	dimensions map[dimensionKey]int64
+
+	spoolMu    sync.Mutex
+	spoolState SpoolState
 }
 
 type Snapshot struct {
@@ -47,7 +50,17 @@ type Snapshot struct {
 	MemoryAllocBytes         uint64           `json:"memory_alloc_bytes"`
 	ProcessCPUSeconds        float64          `json:"process_cpu_seconds"`
 	CPUPercentEstimate       float64          `json:"cpu_percent_estimate"`
+	OverloadMode             string           `json:"overload_mode"`
+	Spool                    SpoolState       `json:"spool"`
 	RequestDimensionCounters []DimensionCount `json:"request_dimension_counters"`
+}
+
+type SpoolState struct {
+	Dir       string `json:"dir"`
+	Mode      string `json:"mode"`
+	UsedBytes int64  `json:"used_bytes"`
+	MaxBytes  int64  `json:"max_bytes"`
+	FileCount int    `json:"file_count"`
 }
 
 type DimensionCount struct {
@@ -131,6 +144,12 @@ func (c *Counters) ObserveReplayed(records int) {
 	}
 }
 
+func (c *Counters) ObserveSpoolState(state SpoolState) {
+	c.spoolMu.Lock()
+	defer c.spoolMu.Unlock()
+	c.spoolState = state
+}
+
 func (c *Counters) Snapshot() Snapshot {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -166,8 +185,27 @@ func (c *Counters) Snapshot() Snapshot {
 		MemoryAllocBytes:         mem.Alloc,
 		ProcessCPUSeconds:        cpuSeconds,
 		CPUPercentEstimate:       cpuPercent,
+		OverloadMode:             c.overloadMode(),
+		Spool:                    c.currentSpoolState(),
 		RequestDimensionCounters: c.dimensionSnapshot(),
 	}
+}
+
+func (c *Counters) currentSpoolState() SpoolState {
+	c.spoolMu.Lock()
+	defer c.spoolMu.Unlock()
+	return c.spoolState
+}
+
+func (c *Counters) overloadMode() string {
+	state := c.currentSpoolState()
+	if state.Mode != "" {
+		return state.Mode
+	}
+	if c.kafkaPublishErrorsTotal.Load() > 0 {
+		return "degraded"
+	}
+	return "normal"
 }
 
 func (c *Counters) dimensionSnapshot() []DimensionCount {

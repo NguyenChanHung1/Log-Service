@@ -14,6 +14,7 @@ import (
 	"log-service/internal/logevent"
 	"log-service/internal/logline"
 	"log-service/internal/metrics"
+	"log-service/internal/spool"
 )
 
 var ErrUnavailable = errors.New("no durable write path available")
@@ -31,6 +32,7 @@ type Handler struct {
 	spooler        Spooler
 	logger         *slog.Logger
 	metrics        *metrics.Counters
+	inFlight       chan struct{}
 	maxBodyBytes   int64
 	maxBatchSize   int
 	requestTimeout time.Duration
@@ -44,6 +46,7 @@ type HandlerOptions struct {
 	MaxBodyBytes   int64
 	MaxBatchSize   int
 	RequestTimeout time.Duration
+	MaxInFlight    int
 }
 
 func NewHandler(opts HandlerOptions) *Handler {
@@ -52,7 +55,7 @@ func NewHandler(opts HandlerOptions) *Handler {
 		logger = slog.Default()
 	}
 
-	return &Handler{
+	handler := &Handler{
 		publisher:      opts.Publisher,
 		spooler:        opts.Spooler,
 		logger:         logger,
@@ -61,10 +64,20 @@ func NewHandler(opts HandlerOptions) *Handler {
 		maxBatchSize:   opts.MaxBatchSize,
 		requestTimeout: opts.RequestTimeout,
 	}
+	if opts.MaxInFlight > 0 {
+		handler.inFlight = make(chan struct{}, opts.MaxInFlight)
+	}
+	return handler
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.observeRequest()
+	h.observeSpoolState()
+
+	if !h.acquire(w) {
+		return
+	}
+	defer h.release()
 
 	if r.Method != http.MethodPost {
 		h.observeRejected(0)
@@ -120,10 +133,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.publisher.Publish(ctx, events); err == nil {
 		h.observeAccepted(events, "kafka")
-		writeJSON(w, http.StatusAccepted, Response{
-			Accepted: len(events),
-			Storage:  "kafka",
-		})
+		writeJSON(w, http.StatusAccepted, Response{Accepted: len(events), Storage: "kafka"})
 		return
 	} else if h.spooler == nil {
 		h.observeKafkaPublishError()
@@ -139,17 +149,42 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := h.spooler.Write(ctx, events); err != nil {
 		h.observeSpoolWriteError()
 		h.observeRejected(len(events))
+		h.observeSpoolState()
+		if errors.Is(err, spool.ErrFull) {
+			w.Header().Set("Retry-After", "1")
+			h.logger.Error("durable spool capacity exhausted", "error", err)
+			writeError(w, http.StatusServiceUnavailable, "durable spool capacity exhausted")
+			return
+		}
 		h.logger.Error("durable spool write failed", "error", err)
 		writeError(w, http.StatusServiceUnavailable, ErrUnavailable.Error())
 		return
 	}
 
 	h.observeAccepted(events, "spool")
-	writeJSON(w, http.StatusAccepted, Response{
-		Accepted: len(events),
-		Storage:  "spool",
-		Degraded: true,
-	})
+	h.observeSpoolState()
+	writeJSON(w, http.StatusAccepted, Response{Accepted: len(events), Storage: "spool", Degraded: true})
+}
+
+func (h *Handler) acquire(w http.ResponseWriter) bool {
+	if h.inFlight == nil {
+		return true
+	}
+	select {
+	case h.inFlight <- struct{}{}:
+		return true
+	default:
+		h.observeRejected(0)
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "ingestion is saturated; retry after durable backlog drains")
+		return false
+	}
+}
+
+func (h *Handler) release() {
+	if h.inFlight != nil {
+		<-h.inFlight
+	}
 }
 
 func (h *Handler) validate(req Request) ([]logevent.Event, error) {
@@ -214,6 +249,24 @@ func (h *Handler) observeSpoolWriteError() {
 	if h.metrics != nil {
 		h.metrics.ObserveSpoolWriteError()
 	}
+}
+
+func (h *Handler) observeSpoolState() {
+	if h.metrics == nil || h.spooler == nil {
+		return
+	}
+	stateProvider, ok := h.spooler.(interface{ State() spool.State })
+	if !ok {
+		return
+	}
+	state := stateProvider.State()
+	h.metrics.ObserveSpoolState(metrics.SpoolState{
+		Dir:       state.Dir,
+		Mode:      state.Mode,
+		UsedBytes: state.UsedBytes,
+		MaxBytes:  state.MaxBytes,
+		FileCount: state.FileCount,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

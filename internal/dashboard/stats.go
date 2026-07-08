@@ -190,7 +190,7 @@ func (c *Collector) kafkaOverview(ctx context.Context) map[string]any {
 		"topic_depth":     depth,
 		"consumer_group":  c.cfg.KafkaConsumer,
 		"consumer_lag":    nil,
-		"lag_note":        "consumer lag is available after the WP7 worker consumer group is implemented",
+		"lag_note":        "consumer lag sampling is not implemented in the lightweight dashboard yet; topic depth is available",
 		"retry_backlog":   nil,
 		"spooled_records": nil,
 	}

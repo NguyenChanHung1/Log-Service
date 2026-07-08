@@ -11,6 +11,7 @@ type Config struct {
 	WorkerPort           string
 	DashboardAPIPort     string
 	DashboardUIPort      string
+	MaxInFlightRequests  int
 	LogAPIURL            string
 	WorkerAPIURL         string
 	KafkaBrokers         string
@@ -37,6 +38,7 @@ func Load() Config {
 		WorkerPort:           getString("WORKER_PORT", "8081"),
 		DashboardAPIPort:     getString("DASHBOARD_API_PORT", "8082"),
 		DashboardUIPort:      getString("DASHBOARD_UI_PORT", "3000"),
+		MaxInFlightRequests:  getInt("MAX_IN_FLIGHT_REQUESTS", 256),
 		LogAPIURL:            getString("LOG_API_URL", "http://localhost:8080"),
 		WorkerAPIURL:         getString("WORKER_API_URL", "http://localhost:8081"),
 		KafkaBrokers:         getString("KAFKA_BROKERS", "localhost:29092"),

@@ -27,15 +27,20 @@ Implemented so far:
 - Kafka topic initialization for `logs.raw`, `logs.retry`, and `logs.dlq`
 - Elasticsearch index template for `logs-*`
 - Dashboard API and static dashboard UI for overview, filters, stored logs, and real-time log stream
+- Worker consumer for `logs.raw` with Elasticsearch bulk indexing
+- Worker retry, DLQ, and durable replay spool for Elasticsearch failures
+- Concurrent log generator with configurable clients, TPS, duration, batch size, and traffic mode
 - HTTP log ingestion endpoint at `POST /v1/logs`
 - Kafka producer integration for accepted log batches
 - Durable local spool fallback when Kafka publishing fails
+- API overload modes: normal, degraded, critical, exhausted
+- API spool replay back into Kafka after broker recovery
+- Demo and evidence-capture scripts for final reporting
 - Graceful shutdown for the log API
 
 Planned next:
 
-- Worker consumer and Elasticsearch bulk writer
-- Spool replay behavior
+- Final tuning and screenshots for the submitted report
 
 ## Repository Layout
 
@@ -43,8 +48,8 @@ Planned next:
 cmd/
   dashboard-api/    Dashboard query and monitoring API
   log-api/          Log ingestion API skeleton
-  log-generator/    Log generator skeleton
-  log-worker/       Worker skeleton
+  log-generator/    Concurrent load generator
+  log-worker/       Kafka consumer and Elasticsearch writer
 deployments/
   docker-compose.yml
   elasticsearch/
@@ -163,6 +168,8 @@ curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
 curl http://localhost:8080/stats
 curl http://localhost:8081/healthz
+curl http://localhost:8081/readyz
+curl http://localhost:8081/stats
 curl http://localhost:8082/healthz
 curl http://localhost:8082/api/overview
 curl "http://localhost:8082/api/metrics"
@@ -175,6 +182,13 @@ Submit a test log batch:
 curl -i -X POST http://localhost:8080/v1/logs \
   -H "Content-Type: application/json" \
   -d '{"source":"manual-test","records":["2026-07-07T09:00:01Z 10.10.1.5 GET /login 200"]}'
+```
+
+Run the log generator:
+
+```bash
+./bin/log-generator --target http://localhost:8080/v1/logs --clients 4 --tps 500 --duration 30s --batch-size 100 --mode steady
+./bin/log-generator --target http://localhost:8080/v1/logs --clients 4 --tps 1000 --duration 30s --batch-size 100 --mode burst
 ```
 
 ## Infrastructure Checks
@@ -224,9 +238,9 @@ The planned full workflow is:
 1. Log generator creates logs at configurable TPS.
 2. Log API validates batches and durably accepts logs.
 3. Kafka stores accepted logs in `logs.raw`.
-4. Worker consumes Kafka records, parses them, and writes to Elasticsearch.
-5. Invalid or poison records go to `logs.dlq`.
-6. Temporary failures are retried or replayed from durable storage.
+4. Worker consumes Kafka records, validates them, bulk-indexes them into Elasticsearch, and commits offsets only after safe handling.
+5. Invalid or poison records go to `logs.dlq` with reason metadata.
+6. Temporary Elasticsearch failures are retried and then written to a durable worker replay spool for later indexing.
 7. Dashboard displays service status, CPU/RAM, request filters, Kafka depth, Elasticsearch status, stored logs, and real-time logs.
 
 For more detail, see:
@@ -234,9 +248,12 @@ For more detail, see:
 - [requirements/log-processing-system-plan.md](requirements/log-processing-system-plan.md)
 - [requirements/implementation-plan.md](requirements/implementation-plan.md)
 - [requirements/full-workflow-diagram.md](requirements/full-workflow-diagram.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/operations.md](docs/operations.md)
+- [docs/test-report.md](docs/test-report.md)
 
 ## Reliability Notes
 
-Accepted logs should not be dropped. The design uses Kafka as the primary durable buffer. If Kafka is temporarily saturated or unavailable, the planned API behavior is to write accepted records to a durable local spool and replay them later. `503 Service Unavailable` should only be returned when no durable write path is available.
+Accepted logs should not be dropped. Kafka is the primary durable buffer. If Kafka is temporarily saturated or unavailable, the API writes accepted records to a durable local spool and replays them later. `503 Service Unavailable` with `Retry-After` is returned only when the short in-flight handoff is saturated or no durable write path remains.
 
 Elasticsearch write failures should not drop input data. The worker should retry temporary failures, pause or slow consumption during outages, and use durable replay storage or retry topics for prolonged failures.

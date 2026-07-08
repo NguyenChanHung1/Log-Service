@@ -1,6 +1,7 @@
 package spool
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,14 @@ type Writer struct {
 	dir      string
 	maxBytes int64
 	now      func() time.Time
+}
+
+type State struct {
+	Dir       string `json:"dir"`
+	Mode      string `json:"mode"`
+	UsedBytes int64  `json:"used_bytes"`
+	MaxBytes  int64  `json:"max_bytes"`
+	FileCount int    `json:"file_count"`
 }
 
 func NewWriter(dir string, maxBytes int64) *Writer {
@@ -54,8 +63,45 @@ func (w *Writer) Write(ctx context.Context, events []logevent.Event) error {
 	}
 
 	name := fmt.Sprintf("%s-%d.jsonl", w.now().UTC().Format("20060102T150405.000000000Z"), os.Getpid())
-	path := filepath.Join(w.dir, name)
-	return os.WriteFile(path, payload, 0o644)
+	tmpPath := filepath.Join(w.dir, name+".tmp")
+	finalPath := filepath.Join(w.dir, name)
+	if err := os.WriteFile(tmpPath, payload, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, finalPath)
+}
+
+func (w *Writer) State() State {
+	used, count, err := dirUsage(w.dir)
+	if err != nil {
+		return State{Dir: w.dir, Mode: "unknown", MaxBytes: w.maxBytes}
+	}
+	return State{
+		Dir:       w.dir,
+		Mode:      mode(used, w.maxBytes),
+		UsedBytes: used,
+		MaxBytes:  w.maxBytes,
+		FileCount: count,
+	}
+}
+
+func ReadFile(path string) ([]logevent.Event, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var events []logevent.Event
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var event logevent.Event
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, scanner.Err()
 }
 
 func marshalJSONLines(events []logevent.Event) ([]byte, error) {
@@ -72,12 +118,18 @@ func marshalJSONLines(events []logevent.Event) ([]byte, error) {
 }
 
 func dirSize(dir string) (int64, error) {
+	size, _, err := dirUsage(dir)
+	return size, err
+}
+
+func dirUsage(dir string) (int64, int, error) {
 	var total int64
+	var count int
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
+		if d.IsDir() || filepath.Ext(path) == ".tmp" {
 			return nil
 		}
 		info, err := d.Info()
@@ -85,7 +137,31 @@ func dirSize(dir string) (int64, error) {
 			return err
 		}
 		total += info.Size()
+		count++
 		return nil
 	})
-	return total, err
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, 0, nil
+	}
+	return total, count, err
+}
+
+func mode(used int64, maxBytes int64) string {
+	if maxBytes <= 0 {
+		if used > 0 {
+			return "degraded"
+		}
+		return "normal"
+	}
+	ratio := float64(used) / float64(maxBytes)
+	switch {
+	case ratio >= 1:
+		return "exhausted"
+	case ratio >= 0.8:
+		return "critical"
+	case ratio > 0:
+		return "degraded"
+	default:
+		return "normal"
+	}
 }

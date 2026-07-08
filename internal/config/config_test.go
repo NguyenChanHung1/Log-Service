@@ -13,6 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("WORKER_PORT", "")
 	t.Setenv("DASHBOARD_API_PORT", "")
 	t.Setenv("DASHBOARD_UI_PORT", "")
+	t.Setenv("MAX_IN_FLIGHT_REQUESTS", "")
 	t.Setenv("LOG_API_URL", "")
 	t.Setenv("WORKER_API_URL", "")
 	t.Setenv("MAX_BATCH_SIZE", "")
@@ -35,6 +36,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.DashboardUIPort != "3000" {
 		t.Fatalf("expected default dashboard ui port 3000, got %s", cfg.DashboardUIPort)
+	}
+	if cfg.MaxInFlightRequests != 256 {
+		t.Fatalf("expected default max in-flight requests 256, got %d", cfg.MaxInFlightRequests)
 	}
 	if cfg.LogAPIURL != "http://localhost:8080" {
 		t.Fatalf("expected default log api url http://localhost:8080, got %s", cfg.LogAPIURL)
@@ -67,6 +71,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("WORKER_PORT", "9001")
 	t.Setenv("DASHBOARD_API_PORT", "9002")
 	t.Setenv("DASHBOARD_UI_PORT", "9003")
+	t.Setenv("MAX_IN_FLIGHT_REQUESTS", "7")
 	t.Setenv("LOG_API_URL", "http://log-api:8080")
 	t.Setenv("WORKER_API_URL", "http://log-worker:8081")
 	t.Setenv("MAX_BATCH_SIZE", "42")
@@ -89,6 +94,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.DashboardUIPort != "9003" {
 		t.Fatalf("expected dashboard ui port override 9003, got %s", cfg.DashboardUIPort)
+	}
+	if cfg.MaxInFlightRequests != 7 {
+		t.Fatalf("expected max in-flight requests override 7, got %d", cfg.MaxInFlightRequests)
 	}
 	if cfg.LogAPIURL != "http://log-api:8080" {
 		t.Fatalf("expected log api url override http://log-api:8080, got %s", cfg.LogAPIURL)
@@ -135,6 +143,7 @@ func TestLoadMatchesDotEnvFile(t *testing.T) {
 	assertString(t, "WORKER_PORT", values, cfg.WorkerPort)
 	assertString(t, "DASHBOARD_API_PORT", values, cfg.DashboardAPIPort)
 	assertString(t, "DASHBOARD_UI_PORT", values, cfg.DashboardUIPort)
+	assertInt(t, "MAX_IN_FLIGHT_REQUESTS", values, cfg.MaxInFlightRequests)
 	assertString(t, "LOG_API_URL", values, cfg.LogAPIURL)
 	assertString(t, "WORKER_API_URL", values, cfg.WorkerAPIURL)
 	assertString(t, "KAFKA_BROKERS", values, cfg.KafkaBrokers)
