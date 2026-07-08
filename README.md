@@ -27,13 +27,15 @@ Implemented so far:
 - Kafka topic initialization for `logs.raw`, `logs.retry`, and `logs.dlq`
 - Elasticsearch index template for `logs-*`
 - Placeholder dashboard API and dashboard UI
+- HTTP log ingestion endpoint at `POST /v1/logs`
+- Kafka producer integration for accepted log batches
+- Durable local spool fallback when Kafka publishing fails
+- Graceful shutdown for the log API
 
 Planned next:
 
-- HTTP log ingestion API
-- Kafka producer integration
 - Worker consumer and Elasticsearch bulk writer
-- Durable spool and replay behavior
+- Spool replay behavior
 - Full dashboard with CPU/RAM, filters, and real-time logs
 
 ## Repository Layout
@@ -154,9 +156,18 @@ Current Go skeleton endpoints:
 
 ```bash
 curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
 curl http://localhost:8081/healthz
 curl http://localhost:8082/healthz
 curl http://localhost:8082/api/overview
+```
+
+Submit a test log batch:
+
+```bash
+curl -i -X POST http://localhost:8080/v1/logs \
+  -H "Content-Type: application/json" \
+  -d '{"source":"manual-test","records":["2026-07-07T09:00:01Z 10.10.1.5 GET /login 200"]}'
 ```
 
 ## Infrastructure Checks

@@ -76,6 +76,32 @@ services:
     command: ["/bin/sh", "/scripts/install-index-template.sh"]
     restart: "no"
 
+  log-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        SERVICE: log-api
+    container_name: log-service-api
+    ports:
+      - "8080:8080"
+    environment:
+      APP_PORT: "8080"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_LOG_TOPIC: "logs.raw"
+      MAX_BATCH_SIZE: "1000"
+      MAX_BODY_BYTES: "1048576"
+      REQUEST_TIMEOUT: "5s"
+      SPOOL_DIR: "/tmp/log-service-spool"
+      SPOOL_MAX_BYTES: "1073741824"
+    volumes:
+      - log-api-spool:/tmp/log-service-spool
+    depends_on:
+      kafka:
+        condition: service_healthy
+    profiles:
+      - app
+
   dashboard-api:
     build:
       context: ..
@@ -112,3 +138,4 @@ services:
 volumes:
   kafka-data:
   elasticsearch-data:
+  log-api-spool:

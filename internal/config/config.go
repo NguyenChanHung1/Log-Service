@@ -47,7 +47,7 @@ func Load() Config {
 		WorkerBulkSize:       getInt("WORKER_BULK_SIZE", 1000),
 		WorkerFlushInterval:  getDuration("WORKER_FLUSH_INTERVAL", 2*time.Second),
 		WorkerRetryMax:       getInt("WORKER_RETRY_MAX", 5),
-		SpoolDir:             getString("SPOOL_DIR", "/data/log-service-spool"),
+		SpoolDir:             getString("SPOOL_DIR", "/tmp/log-service-spool"),
 		SpoolMaxBytes:        getInt64("SPOOL_MAX_BYTES", 1073741824),
 		SpoolReplayInterval:  getDuration("SPOOL_REPLAY_INTERVAL", 2*time.Second),
 		RealtimeStreamBuffer: getInt("REALTIME_STREAM_BUFFER", 1000),

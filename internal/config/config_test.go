@@ -40,8 +40,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RequestTimeout != 5*time.Second {
 		t.Fatalf("expected default request timeout 5s, got %s", cfg.RequestTimeout)
 	}
-	if cfg.SpoolDir != "/data/log-service-spool" {
-		t.Fatalf("expected default spool dir /data/log-service-spool, got %s", cfg.SpoolDir)
+	if cfg.SpoolDir != "/tmp/log-service-spool" {
+		t.Fatalf("expected default spool dir /tmp/log-service-spool, got %s", cfg.SpoolDir)
 	}
 	if cfg.SpoolMaxBytes != 1073741824 {
 		t.Fatalf("expected default spool max bytes 1073741824, got %d", cfg.SpoolMaxBytes)

@@ -12,7 +12,7 @@ RUN go build -o /out/service ./cmd/${SERVICE}
 
 FROM alpine:3.20
 
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app && mkdir -p /tmp/log-service-spool && chown -R app:app /tmp/log-service-spool
 
 WORKDIR /app
 COPY --from=builder /out/service /app/service
