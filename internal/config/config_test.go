@@ -13,6 +13,8 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("WORKER_PORT", "")
 	t.Setenv("DASHBOARD_API_PORT", "")
 	t.Setenv("DASHBOARD_UI_PORT", "")
+	t.Setenv("LOG_API_URL", "")
+	t.Setenv("WORKER_API_URL", "")
 	t.Setenv("MAX_BATCH_SIZE", "")
 	t.Setenv("REQUEST_TIMEOUT", "")
 	t.Setenv("SPOOL_DIR", "")
@@ -33,6 +35,12 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.DashboardUIPort != "3000" {
 		t.Fatalf("expected default dashboard ui port 3000, got %s", cfg.DashboardUIPort)
+	}
+	if cfg.LogAPIURL != "http://localhost:8080" {
+		t.Fatalf("expected default log api url http://localhost:8080, got %s", cfg.LogAPIURL)
+	}
+	if cfg.WorkerAPIURL != "http://localhost:8081" {
+		t.Fatalf("expected default worker api url http://localhost:8081, got %s", cfg.WorkerAPIURL)
 	}
 	if cfg.MaxBatchSize != 1000 {
 		t.Fatalf("expected default max batch size 1000, got %d", cfg.MaxBatchSize)
@@ -59,6 +67,8 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("WORKER_PORT", "9001")
 	t.Setenv("DASHBOARD_API_PORT", "9002")
 	t.Setenv("DASHBOARD_UI_PORT", "9003")
+	t.Setenv("LOG_API_URL", "http://log-api:8080")
+	t.Setenv("WORKER_API_URL", "http://log-worker:8081")
 	t.Setenv("MAX_BATCH_SIZE", "42")
 	t.Setenv("REQUEST_TIMEOUT", "250ms")
 	t.Setenv("SPOOL_DIR", "/tmp/spool")
@@ -79,6 +89,12 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.DashboardUIPort != "9003" {
 		t.Fatalf("expected dashboard ui port override 9003, got %s", cfg.DashboardUIPort)
+	}
+	if cfg.LogAPIURL != "http://log-api:8080" {
+		t.Fatalf("expected log api url override http://log-api:8080, got %s", cfg.LogAPIURL)
+	}
+	if cfg.WorkerAPIURL != "http://log-worker:8081" {
+		t.Fatalf("expected worker api url override http://log-worker:8081, got %s", cfg.WorkerAPIURL)
 	}
 	if cfg.MaxBatchSize != 42 {
 		t.Fatalf("expected max batch size override 42, got %d", cfg.MaxBatchSize)
@@ -119,6 +135,8 @@ func TestLoadMatchesDotEnvFile(t *testing.T) {
 	assertString(t, "WORKER_PORT", values, cfg.WorkerPort)
 	assertString(t, "DASHBOARD_API_PORT", values, cfg.DashboardAPIPort)
 	assertString(t, "DASHBOARD_UI_PORT", values, cfg.DashboardUIPort)
+	assertString(t, "LOG_API_URL", values, cfg.LogAPIURL)
+	assertString(t, "WORKER_API_URL", values, cfg.WorkerAPIURL)
 	assertString(t, "KAFKA_BROKERS", values, cfg.KafkaBrokers)
 	assertString(t, "KAFKA_LOG_TOPIC", values, cfg.KafkaLogTopic)
 	assertString(t, "KAFKA_RETRY_TOPIC", values, cfg.KafkaRetryTopic)

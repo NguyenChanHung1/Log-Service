@@ -1,40 +1,33 @@
 package main
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
 
 	"log-service/internal/config"
+	"log-service/internal/dashboard"
 )
 
 func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "dashboard-api"})
+	collector := dashboard.NewCollector(dashboard.Config{
+		ElasticsearchURL: cfg.ElasticsearchURL,
+		KafkaBrokers:     cfg.KafkaBrokers,
+		KafkaLogTopic:    cfg.KafkaLogTopic,
+		KafkaConsumer:    cfg.KafkaConsumerGroup,
+		LogAPIURL:        cfg.LogAPIURL,
+		WorkerAPIURL:     cfg.WorkerAPIURL,
+		StreamBuffer:     cfg.RealtimeStreamBuffer,
 	})
-	mux.HandleFunc("/api/overview", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"service": "dashboard-api",
-			"message": "dashboard API placeholder for WP3 infrastructure",
-		})
-	})
+	server := dashboard.NewServer(collector, logger)
 
 	addr := ":" + cfg.DashboardAPIPort
 	logger.Info("starting dashboard api", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, server.Routes()); err != nil {
 		logger.Error("dashboard api stopped", "error", err)
 		os.Exit(1)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
 }

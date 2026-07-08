@@ -5,42 +5,110 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Log Service Dashboard</title>
     <style>
-      body {
-        margin: 0;
-        font-family: system-ui, sans-serif;
-        background: #f8fafc;
-        color: #0f172a;
-      }
-
-      main {
-        max-width: 960px;
-        margin: 0 auto;
-        padding: 48px 24px;
-      }
-
-      .panel {
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        background: #ffffff;
-        padding: 24px;
-      }
-
-      code {
-        border-radius: 4px;
-        background: #e2e8f0;
-        padding: 2px 6px;
-      }
+      :root { color-scheme: light; --bg: #f6f8fb; --panel: #ffffff; --line: #d8e0ea; --text: #102033; --muted: #637083; --accent: #2563eb; --good: #15803d; --warn: #b45309; --bad: #b91c1c; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+      header { border-bottom: 1px solid var(--line); background: var(--panel); }
+      .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+      .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: 4px; font-size: 24px; }
+      h2 { margin-bottom: 14px; font-size: 18px; }
+      h3 { margin-bottom: 8px; font-size: 15px; }
+      p { color: var(--muted); }
+      .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      button, input, select { min-height: 36px; border: 1px solid var(--line); border-radius: 6px; background: #ffffff; color: var(--text); font: inherit; }
+      button { cursor: pointer; padding: 0 12px; }
+      button.primary, button.active { border-color: var(--accent); background: var(--accent); color: #ffffff; }
+      main { padding: 22px 0 48px; }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+      .panel, .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+      .panel { padding: 18px; margin-top: 14px; }
+      .card { padding: 14px; }
+      .metric-label { color: var(--muted); font-size: 13px; }
+      .metric-value { margin-top: 8px; font-size: 24px; font-weight: 700; }
+      .status { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+      .ok { background: #dcfce7; color: var(--good); }
+      .degraded, .unknown { background: #fef3c7; color: var(--warn); }
+      .unavailable { background: #fee2e2; color: var(--bad); }
+      .filters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; align-items: end; }
+      label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
+      input, select { width: 100%; padding: 0 10px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: top; font-size: 13px; }
+      th { color: var(--muted); font-weight: 700; }
+      code { overflow-wrap: anywhere; }
+      .chart { display: flex; align-items: end; gap: 3px; height: 150px; border-bottom: 1px solid var(--line); padding-top: 12px; }
+      .bar { flex: 1; min-width: 4px; border-radius: 4px 4px 0 0; background: var(--accent); }
+      .stream { display: grid; gap: 8px; max-height: 520px; overflow: auto; }
+      .log-line { border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fbfdff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+      .muted { color: var(--muted); }
+      .hidden { display: none; }
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 900px) { .grid, .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 560px) { .topbar { align-items: flex-start; flex-direction: column; } .grid, .split, .filters { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
-    <main>
-      <section class="panel">
-        <h1>Log Service Dashboard</h1>
-        <p>This placeholder confirms the dashboard UI container is reachable for WP3.</p>
-        <p>The full dashboard with CPU/RAM, filters, and real-time logs is planned for WP6.</p>
-        <p>Dashboard API health: <code>http://localhost:8082/healthz</code></p>
+    <header>
+      <div class="shell topbar">
+        <div><h1>Log Service Dashboard</h1><p id="lastUpdated">Waiting for dashboard API...</p></div>
+        <nav class="tabs" aria-label="Dashboard pages">
+          <button class="active" data-page="overview">Overview</button>
+          <button data-page="logs">Logs</button>
+          <button data-page="realtime">Real-time</button>
+          <button id="refresh" class="primary">Refresh</button>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <section id="overviewPage">
+        <div class="grid">
+          <div class="card"><div class="metric-label">Dashboard CPU</div><div id="cpu" class="metric-value">-</div></div>
+          <div class="card"><div class="metric-label">Dashboard RAM</div><div id="ram" class="metric-value">-</div></div>
+          <div class="card"><div class="metric-label">Accepted Records</div><div id="accepted" class="metric-value">-</div></div>
+          <div class="card"><div class="metric-label">Kafka Topic Depth</div><div id="kafkaDepth" class="metric-value">-</div></div>
+        </div>
+        <section class="panel"><h2>Service Health</h2><table><thead><tr><th>Service</th><th>Status</th><th>Latency</th><th>Detail</th></tr></thead><tbody id="services"></tbody></table></section>
+        <section class="split"><div class="panel"><h2>Kafka</h2><div id="kafkaPanel" class="muted">No data yet.</div></div><div class="panel"><h2>Elasticsearch</h2><div id="elasticPanel" class="muted">No data yet.</div></div></section>
       </section>
+      <section id="logsPage" class="hidden">
+        <section class="panel"><h2>Request Filters</h2><div class="filters"><label>From <input id="from" type="datetime-local"></label><label>To <input id="to" type="datetime-local"></label><label>IP <input id="ip" placeholder="10.10.1.5"></label><label>Path <input id="path" placeholder="/login"></label><label>Status <input id="status" placeholder="200"></label><button id="applyFilters" class="primary">Apply</button></div></section>
+        <section class="panel"><h2>Requests Over Time</h2><div id="chart" class="chart"></div></section>
+        <section class="panel"><h2>Stored Logs</h2><table><thead><tr><th>Time</th><th>IP</th><th>Method</th><th>Path</th><th>Status</th><th>Raw</th></tr></thead><tbody id="logs"></tbody></table></section>
+      </section>
+      <section id="realtimePage" class="hidden"><section class="panel"><h2>Real-time Logs</h2><p id="streamStatus">Connecting...</p><div id="stream" class="stream"></div></section></section>
     </main>
+    <script>
+      const apiBase = `${location.protocol}//${location.hostname}:8082`;
+      const state = { page: 'overview', stream: null };
+      const els = { lastUpdated: document.querySelector('#lastUpdated'), cpu: document.querySelector('#cpu'), ram: document.querySelector('#ram'), accepted: document.querySelector('#accepted'), kafkaDepth: document.querySelector('#kafkaDepth'), services: document.querySelector('#services'), kafkaPanel: document.querySelector('#kafkaPanel'), elasticPanel: document.querySelector('#elasticPanel'), chart: document.querySelector('#chart'), logs: document.querySelector('#logs'), stream: document.querySelector('#stream'), streamStatus: document.querySelector('#streamStatus') };
+      document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => switchPage(button.dataset.page)));
+      document.querySelector('#refresh').addEventListener('click', refreshAll);
+      document.querySelector('#applyFilters').addEventListener('click', loadLogsAndMetrics);
+      setDefaultRange(); refreshAll(); setInterval(() => { if (state.page === 'overview') loadOverview(); }, 5000);
+      function switchPage(page) { state.page = page; document.querySelectorAll('[data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === page)); document.querySelector('#overviewPage').classList.toggle('hidden', page !== 'overview'); document.querySelector('#logsPage').classList.toggle('hidden', page !== 'logs'); document.querySelector('#realtimePage').classList.toggle('hidden', page !== 'realtime'); if (page === 'logs') loadLogsAndMetrics(); if (page === 'realtime') startStream(); else stopStream(); }
+      function refreshAll() { loadOverview(); if (state.page === 'logs') loadLogsAndMetrics(); }
+      async function loadOverview() { try { const overview = await getJSON('/api/overview'); els.lastUpdated.textContent = `Updated ${new Date(overview.generated_at).toLocaleString()} | status: ${overview.status}`; els.cpu.textContent = `${formatNumber(overview.runtime.cpu_percent_estimate, 1)}%`; els.ram.textContent = formatBytes(overview.runtime.memory_alloc_bytes); els.accepted.textContent = formatInteger(overview.log_api_stats?.accepted_records_total ?? 0); els.kafkaDepth.textContent = formatInteger(overview.kafka?.topic_depth ?? 0); renderServices(overview.services || []); renderKeyValues(els.kafkaPanel, overview.kafka || {}); renderKeyValues(els.elasticPanel, overview.elasticsearch || {}); } catch (error) { els.lastUpdated.textContent = `Dashboard API unavailable: ${error.message}`; } }
+      async function loadLogsAndMetrics() { const params = filterParams(); const [metrics, logs] = await Promise.all([getJSON(`/api/metrics?${params}`), getJSON(`/api/logs?${params}&limit=100`)]); renderChart(metrics.points || []); renderLogs(logs.logs || []); }
+      function startStream() { if (state.stream) return; state.stream = new EventSource(`${apiBase}/api/logs/stream`); els.streamStatus.textContent = 'Connected. Waiting for indexed logs...'; state.stream.addEventListener('log', (event) => prependLog(JSON.parse(event.data))); state.stream.addEventListener('error', () => { els.streamStatus.textContent = 'Stream reconnecting...'; }); }
+      function stopStream() { if (!state.stream) return; state.stream.close(); state.stream = null; }
+      function renderServices(services) { els.services.innerHTML = services.map((service) => `<tr><td>${escapeHTML(service.name)}</td><td><span class="status ${escapeHTML(service.status)}">${escapeHTML(service.status)}</span></td><td>${service.latency_ms ?? '-'} ms</td><td>${escapeHTML(service.detail || '')}</td></tr>`).join(''); }
+      function renderKeyValues(container, data) { const rows = Object.entries(data).map(([key, value]) => `<tr><th>${escapeHTML(key)}</th><td>${escapeHTML(formatValue(value))}</td></tr>`).join(''); container.innerHTML = `<table><tbody>${rows || '<tr><td>No data</td></tr>'}</tbody></table>`; }
+      function renderChart(points) { const max = Math.max(1, ...points.map((point) => point.count)); els.chart.innerHTML = points.map((point) => { const height = Math.max(3, Math.round((point.count / max) * 140)); return `<div class="bar" title="${new Date(point.time_bucket).toLocaleTimeString()}: ${point.count}" style="height:${height}px"></div>`; }).join('') || '<p class="muted">No metrics for this range.</p>'; }
+      function renderLogs(logs) { els.logs.innerHTML = logs.map(logRow).join('') || '<tr><td colspan="6" class="muted">No stored logs match this filter.</td></tr>'; }
+      function prependLog(log) { const line = document.createElement('div'); line.className = 'log-line'; line.textContent = `${new Date(log['@timestamp']).toLocaleTimeString()} ${log.ip} ${log.method} ${log.path} ${log.status} ${log.raw}`; els.stream.prepend(line); while (els.stream.children.length > 100) els.stream.lastChild.remove(); }
+      function logRow(log) { return `<tr><td>${escapeHTML(new Date(log['@timestamp']).toLocaleString())}</td><td>${escapeHTML(log.ip || '')}</td><td>${escapeHTML(log.method || '')}</td><td>${escapeHTML(log.path || '')}</td><td>${escapeHTML(String(log.status || ''))}</td><td><code>${escapeHTML(log.raw || '')}</code></td></tr>`; }
+      function filterParams() { const params = new URLSearchParams(); const from = localDateToRFC3339(document.querySelector('#from').value); const to = localDateToRFC3339(document.querySelector('#to').value); if (from) params.set('from', from); if (to) params.set('to', to); ['ip', 'path', 'status'].forEach((id) => { const value = document.querySelector(`#${id}`).value.trim(); if (value) params.set(id, value); }); return params.toString(); }
+      function setDefaultRange() { const now = new Date(); const from = new Date(now.getTime() - 15 * 60 * 1000); document.querySelector('#from').value = toLocalInput(from); document.querySelector('#to').value = toLocalInput(now); }
+      function toLocalInput(date) { const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); return local.toISOString().slice(0, 16); }
+      function localDateToRFC3339(value) { if (!value) return ''; return new Date(value).toISOString(); }
+      async function getJSON(path) { const response = await fetch(`${apiBase}${path}`); if (!response.ok) throw new Error(`${response.status} ${response.statusText}`); return response.json(); }
+      function formatBytes(bytes) { const units = ['B', 'KB', 'MB', 'GB']; let value = Number(bytes || 0); let unit = 0; while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; } return `${formatNumber(value, unit === 0 ? 0 : 1)} ${units[unit]}`; }
+      function formatInteger(value) { return Number(value || 0).toLocaleString(); }
+      function formatNumber(value, digits) { return Number(value || 0).toFixed(digits); }
+      function formatValue(value) { return value === null || value === undefined ? '-' : typeof value === 'object' ? JSON.stringify(value) : String(value); }
+      function escapeHTML(value) { return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
+    </script>
   </body>
 </html>
-

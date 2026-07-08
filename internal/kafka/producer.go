@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"strings"
 	"time"
 
@@ -12,13 +14,16 @@ import (
 )
 
 type Producer struct {
-	writer *kafka.Writer
+	brokers []string
+	writer  *kafka.Writer
 }
 
 func NewProducer(brokers string, topic string) *Producer {
+	brokerList := splitBrokers(brokers)
 	return &Producer{
+		brokers: brokerList,
 		writer: &kafka.Writer{
-			Addr:         kafka.TCP(splitBrokers(brokers)...),
+			Addr:         kafka.TCP(brokerList...),
 			Topic:        topic,
 			Balancer:     &kafka.Hash{},
 			RequiredAcks: kafka.RequireAll,
@@ -44,6 +49,19 @@ func (p *Producer) Publish(ctx context.Context, events []logevent.Event) error {
 	}
 
 	return p.writer.WriteMessages(ctx, messages...)
+}
+
+func (p *Producer) Ping(ctx context.Context) error {
+	if len(p.brokers) == 0 {
+		return errors.New("no kafka brokers configured")
+	}
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", p.brokers[0])
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 func (p *Producer) Close() error {

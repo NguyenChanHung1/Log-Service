@@ -26,7 +26,7 @@ Implemented so far:
 - Docker Compose infrastructure for Kafka and Elasticsearch
 - Kafka topic initialization for `logs.raw`, `logs.retry`, and `logs.dlq`
 - Elasticsearch index template for `logs-*`
-- Placeholder dashboard API and dashboard UI
+- Dashboard API and static dashboard UI for overview, filters, stored logs, and real-time log stream
 - HTTP log ingestion endpoint at `POST /v1/logs`
 - Kafka producer integration for accepted log batches
 - Durable local spool fallback when Kafka publishing fails
@@ -36,13 +36,12 @@ Planned next:
 
 - Worker consumer and Elasticsearch bulk writer
 - Spool replay behavior
-- Full dashboard with CPU/RAM, filters, and real-time logs
 
 ## Repository Layout
 
 ```text
 cmd/
-  dashboard-api/    Placeholder dashboard API
+  dashboard-api/    Dashboard query and monitoring API
   log-api/          Log ingestion API skeleton
   log-generator/    Log generator skeleton
   log-worker/       Worker skeleton
@@ -52,10 +51,13 @@ deployments/
   kafka/
 internal/
   config/           Environment config loader
+  dashboard/        Dashboard API collectors and handlers
+  ingestion/        HTTP log ingestion
   logline/          Log parser and validation
+  metrics/          Runtime and ingestion counters
 requirements/       Architecture and implementation planning docs
 scripts/            Local operational scripts
-web/dashboard/      Placeholder dashboard UI
+web/dashboard/      Static dashboard UI
 ```
 
 ## Prerequisites
@@ -80,6 +82,8 @@ APP_PORT=8080
 WORKER_PORT=8081
 DASHBOARD_API_PORT=8082
 DASHBOARD_UI_PORT=3000
+LOG_API_URL=http://localhost:8080
+WORKER_API_URL=http://localhost:8081
 KAFKA_BROKERS=localhost:29092
 ELASTICSEARCH_URL=http://localhost:9200
 ```
@@ -152,14 +156,17 @@ When the app profile is running:
 - Elasticsearch: `http://localhost:9200`
 - Kafka external listener: `localhost:29092`
 
-Current Go skeleton endpoints:
+Useful local endpoints:
 
 ```bash
 curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
+curl http://localhost:8080/stats
 curl http://localhost:8081/healthz
 curl http://localhost:8082/healthz
 curl http://localhost:8082/api/overview
+curl "http://localhost:8082/api/metrics"
+curl "http://localhost:8082/api/logs?limit=10"
 ```
 
 Submit a test log batch:
@@ -220,7 +227,7 @@ The planned full workflow is:
 4. Worker consumes Kafka records, parses them, and writes to Elasticsearch.
 5. Invalid or poison records go to `logs.dlq`.
 6. Temporary failures are retried or replayed from durable storage.
-7. Dashboard displays service status, CPU/RAM, request filters, Kafka lag, Elasticsearch status, and real-time logs.
+7. Dashboard displays service status, CPU/RAM, request filters, Kafka depth, Elasticsearch status, stored logs, and real-time logs.
 
 For more detail, see:
 

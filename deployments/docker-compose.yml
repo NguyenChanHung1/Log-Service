@@ -102,6 +102,31 @@ services:
     profiles:
       - app
 
+  log-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        SERVICE: log-worker
+    container_name: log-service-worker
+    ports:
+      - "8081:8081"
+    environment:
+      WORKER_PORT: "8081"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_LOG_TOPIC: "logs.raw"
+      KAFKA_RETRY_TOPIC: "logs.retry"
+      KAFKA_DLQ_TOPIC: "logs.dlq"
+      KAFKA_CONSUMER_GROUP: "log-workers"
+      ELASTICSEARCH_URL: "http://elasticsearch:9200"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    profiles:
+      - app
+
   dashboard-api:
     build:
       context: ..
@@ -113,9 +138,15 @@ services:
       - "8082:8082"
     environment:
       DASHBOARD_API_PORT: "8082"
+      LOG_API_URL: "http://log-api:8080"
+      WORKER_API_URL: "http://log-worker:8081"
       KAFKA_BROKERS: "kafka:9092"
       ELASTICSEARCH_URL: "http://elasticsearch:9200"
     depends_on:
+      log-api:
+        condition: service_started
+      log-worker:
+        condition: service_started
       kafka:
         condition: service_healthy
       elasticsearch:

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"log-service/internal/logevent"
+	"log-service/internal/metrics"
 )
 
 type fakePublisher struct {
@@ -172,6 +173,53 @@ func TestHandlerRejectsNonPostMethods(t *testing.T) {
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status 405, got %d", response.Code)
+	}
+}
+
+func TestHandlerRecordsMetrics(t *testing.T) {
+	publisher := &fakePublisher{err: errors.New("kafka unavailable")}
+	spooler := &fakeSpooler{}
+	counters := metrics.NewCounters("log-api")
+	handler := NewHandler(HandlerOptions{
+		Publisher:      publisher,
+		Spooler:        spooler,
+		Logger:         slog.New(slog.NewTextHandler(bytes.NewBuffer(nil), nil)),
+		Metrics:        counters,
+		MaxBodyBytes:   1024,
+		MaxBatchSize:   10,
+		RequestTimeout: time.Second,
+	})
+
+	response := postLogs(handler, `{
+		"source": "client-001",
+		"records": ["2026-07-07T09:00:01Z 10.10.1.5 GET /login 200"]
+	}`)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", response.Code)
+	}
+
+	snapshot := counters.Snapshot()
+	if snapshot.RequestsTotal != 1 {
+		t.Fatalf("expected 1 request, got %d", snapshot.RequestsTotal)
+	}
+	if snapshot.AcceptedRecordsTotal != 1 {
+		t.Fatalf("expected 1 accepted record, got %d", snapshot.AcceptedRecordsTotal)
+	}
+	if snapshot.KafkaPublishErrorsTotal != 1 {
+		t.Fatalf("expected 1 kafka publish error, got %d", snapshot.KafkaPublishErrorsTotal)
+	}
+	if snapshot.SpooledRecordsTotal != 1 {
+		t.Fatalf("expected 1 spooled record, got %d", snapshot.SpooledRecordsTotal)
+	}
+	if snapshot.AverageBatchSize != 1 {
+		t.Fatalf("expected average batch size 1, got %f", snapshot.AverageBatchSize)
+	}
+	if len(snapshot.RequestDimensionCounters) != 1 {
+		t.Fatalf("expected one request dimension counter, got %d", len(snapshot.RequestDimensionCounters))
+	}
+	dimension := snapshot.RequestDimensionCounters[0]
+	if dimension.Source != "client-001" || dimension.IP != "10.10.1.5" || dimension.Method != "GET" || dimension.Path != "/login" || dimension.Status != 200 {
+		t.Fatalf("unexpected request dimension: %+v", dimension)
 	}
 }
 

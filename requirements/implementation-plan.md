@@ -213,6 +213,8 @@ Acceptance checks:
 
 Goal: provide machine-readable monitoring data without Prometheus.
 
+Status: completed for the Log API. Worker and dashboard-specific stats remain in later work packages.
+
 Tasks:
 
 - Add `GET /healthz` for process liveness.
@@ -244,6 +246,8 @@ Acceptance checks:
 ### WP6: Dashboard UI And Query API
 
 Goal: provide a browser UI for monitoring resources, filtering requests, and viewing logs in real time.
+
+Status: completed for the dashboard API and static UI. Stored-log search and real-time log content are backed by Elasticsearch and will show populated results after WP7 starts indexing records.
 
 Tasks:
 

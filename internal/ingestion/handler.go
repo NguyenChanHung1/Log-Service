@@ -13,6 +13,7 @@ import (
 
 	"log-service/internal/logevent"
 	"log-service/internal/logline"
+	"log-service/internal/metrics"
 )
 
 var ErrUnavailable = errors.New("no durable write path available")
@@ -29,6 +30,7 @@ type Handler struct {
 	publisher      Publisher
 	spooler        Spooler
 	logger         *slog.Logger
+	metrics        *metrics.Counters
 	maxBodyBytes   int64
 	maxBatchSize   int
 	requestTimeout time.Duration
@@ -38,6 +40,7 @@ type HandlerOptions struct {
 	Publisher      Publisher
 	Spooler        Spooler
 	Logger         *slog.Logger
+	Metrics        *metrics.Counters
 	MaxBodyBytes   int64
 	MaxBatchSize   int
 	RequestTimeout time.Duration
@@ -53,6 +56,7 @@ func NewHandler(opts HandlerOptions) *Handler {
 		publisher:      opts.Publisher,
 		spooler:        opts.Spooler,
 		logger:         logger,
+		metrics:        opts.Metrics,
 		maxBodyBytes:   opts.MaxBodyBytes,
 		maxBatchSize:   opts.MaxBatchSize,
 		requestTimeout: opts.RequestTimeout,
@@ -60,7 +64,10 @@ func NewHandler(opts HandlerOptions) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.observeRequest()
+
 	if r.Method != http.MethodPost {
+		h.observeRejected(0)
 		w.Header().Set("Allow", http.MethodPost)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -75,6 +82,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
+		h.observeRejected(0)
 		if strings.Contains(err.Error(), "http: request body too large") {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 			return
@@ -84,12 +92,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
+		h.observeRejected(len(req.Records))
 		writeError(w, http.StatusBadRequest, "malformed json")
 		return
 	}
 
 	events, err := h.validate(req)
 	if err != nil {
+		h.observeRejected(len(req.Records))
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -102,31 +112,39 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.publisher == nil {
+		h.observeRejected(len(events))
 		h.logger.Error("ingestion publisher is not configured")
 		writeError(w, http.StatusServiceUnavailable, ErrUnavailable.Error())
 		return
 	}
 
 	if err := h.publisher.Publish(ctx, events); err == nil {
+		h.observeAccepted(events, "kafka")
 		writeJSON(w, http.StatusAccepted, Response{
 			Accepted: len(events),
 			Storage:  "kafka",
 		})
 		return
 	} else if h.spooler == nil {
+		h.observeKafkaPublishError()
+		h.observeRejected(len(events))
 		h.logger.Error("kafka publish failed and no spool is configured", "error", err)
 		writeError(w, http.StatusServiceUnavailable, ErrUnavailable.Error())
 		return
 	} else {
+		h.observeKafkaPublishError()
 		h.logger.Warn("kafka publish failed, falling back to durable spool", "error", err)
 	}
 
 	if err := h.spooler.Write(ctx, events); err != nil {
+		h.observeSpoolWriteError()
+		h.observeRejected(len(events))
 		h.logger.Error("durable spool write failed", "error", err)
 		writeError(w, http.StatusServiceUnavailable, ErrUnavailable.Error())
 		return
 	}
 
+	h.observeAccepted(events, "spool")
 	writeJSON(w, http.StatusAccepted, Response{
 		Accepted: len(events),
 		Storage:  "spool",
@@ -156,11 +174,46 @@ func (h *Handler) validate(req Request) ([]logevent.Event, error) {
 		events = append(events, logevent.Event{
 			Source:     source,
 			Raw:        parsed.Raw,
+			Timestamp:  parsed.Timestamp,
+			IP:         parsed.IP.String(),
+			Method:     parsed.Method,
+			Path:       parsed.Path,
+			Status:     parsed.Status,
 			ReceivedAt: receivedAt,
 		})
 	}
 
 	return events, nil
+}
+
+func (h *Handler) observeRequest() {
+	if h.metrics != nil {
+		h.metrics.ObserveRequest()
+	}
+}
+
+func (h *Handler) observeRejected(records int) {
+	if h.metrics != nil {
+		h.metrics.ObserveRejected(records)
+	}
+}
+
+func (h *Handler) observeAccepted(events []logevent.Event, storage string) {
+	if h.metrics != nil {
+		h.metrics.ObserveAccepted(events, storage)
+	}
+}
+
+func (h *Handler) observeKafkaPublishError() {
+	if h.metrics != nil {
+		h.metrics.ObserveKafkaPublishError()
+	}
+}
+
+func (h *Handler) observeSpoolWriteError() {
+	if h.metrics != nil {
+		h.metrics.ObserveSpoolWriteError()
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

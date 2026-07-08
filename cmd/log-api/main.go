@@ -13,6 +13,7 @@ import (
 	"log-service/internal/config"
 	"log-service/internal/ingestion"
 	"log-service/internal/kafka"
+	"log-service/internal/metrics"
 	"log-service/internal/spool"
 )
 
@@ -29,11 +30,13 @@ func main() {
 		}
 	}()
 
+	apiMetrics := metrics.NewCounters("log-api")
 	spooler := spool.NewWriter(cfg.SpoolDir, cfg.SpoolMaxBytes)
 	logsHandler := ingestion.NewHandler(ingestion.HandlerOptions{
 		Publisher:      producer,
 		Spooler:        spooler,
 		Logger:         logger,
+		Metrics:        apiMetrics,
 		MaxBodyBytes:   cfg.MaxBodyBytes,
 		MaxBatchSize:   cfg.MaxBatchSize,
 		RequestTimeout: cfg.RequestTimeout,
@@ -44,8 +47,15 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "log-api"})
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		readyCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := producer.Ping(readyCtx); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unready", "dependency": "kafka", "error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "log-api"})
 	})
+	mux.Handle("/stats", metrics.Handler(apiMetrics))
 	mux.Handle("/v1/logs", logsHandler)
 
 	addr := ":" + cfg.AppPort
