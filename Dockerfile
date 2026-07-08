@@ -19,5 +19,5 @@ COPY --from=builder /out/service /app/service
 
 USER app
 
-EXPOSE 8080
+EXPOSE 8080 8081 8082
 ENTRYPOINT ["/app/service"]

@@ -1,0 +1,114 @@
+name: log-service
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: log-service-kafka
+    ports:
+      - "29092:29092"
+    environment:
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_CFG_NUM_PARTITIONS: "6"
+      KAFKA_CFG_LOG_RETENTION_HOURS: "72"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    container_name: log-service-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    command: ["/bin/bash", "/scripts/create-topics.sh"]
+    restart: "no"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: log-service-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: "single-node"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/index-template.json:/usr/share/elasticsearch/config/logs-index-template.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:9200/_cluster/health >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  elasticsearch-init:
+    image: curlimages/curl:8.8.0
+    container_name: log-service-elasticsearch-init
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./elasticsearch/index-template.json:/templates/index-template.json:ro
+      - ./elasticsearch/install-index-template.sh:/scripts/install-index-template.sh:ro
+    command: ["/bin/sh", "/scripts/install-index-template.sh"]
+    restart: "no"
+
+  dashboard-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        SERVICE: dashboard-api
+    container_name: log-service-dashboard-api
+    ports:
+      - "8082:8082"
+    environment:
+      DASHBOARD_API_PORT: "8082"
+      KAFKA_BROKERS: "kafka:9092"
+      ELASTICSEARCH_URL: "http://elasticsearch:9200"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    profiles:
+      - app
+
+  dashboard-ui:
+    image: nginx:1.27-alpine
+    container_name: log-service-dashboard-ui
+    ports:
+      - "3000:80"
+    volumes:
+      - ../web/dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - dashboard-api
+    profiles:
+      - app
+
+volumes:
+  kafka-data:
+  elasticsearch-data:
