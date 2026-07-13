@@ -176,6 +176,97 @@ curl "http://localhost:8082/api/metrics"
 curl "http://localhost:8082/api/logs?limit=10"
 ```
 
+## Monitoring UI
+
+Yes. The project includes a lightweight monitoring dashboard UI served by the `dashboard-ui` service at:
+
+```text
+http://localhost:3000
+```
+
+It is intentionally not Prometheus-based. The UI is backed by `dashboard-api`, which gathers live state from the Log API, Worker, Kafka, and Elasticsearch.
+
+The dashboard displays:
+
+- Service health for Log API, Log API readiness, Worker, and Kafka
+- Dashboard API CPU/RAM estimate
+- Accepted records from the Log API
+- API overload mode: `normal`, `degraded`, `critical`, or `exhausted`
+- Kafka topic depth for `logs.raw`
+- Elasticsearch cluster health and recent indexed log count
+- Stored logs from Elasticsearch
+- Request charts filtered by IP, path, and time range
+- Real-time log stream from recently indexed Elasticsearch records
+
+Boot the full stack:
+
+```bash
+docker compose -f deployments/docker-compose.yml --profile app up --build
+```
+
+Or boot it in the background:
+
+```bash
+docker compose -f deployments/docker-compose.yml --profile app up --build -d
+```
+
+Check that monitoring services are running:
+
+```bash
+docker compose -f deployments/docker-compose.yml ps
+curl http://localhost:8082/healthz
+curl http://localhost:8082/api/overview
+```
+
+Check each monitored service directly:
+
+```bash
+curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
+curl http://localhost:8080/stats
+
+curl http://localhost:8081/healthz
+curl http://localhost:8081/readyz
+curl http://localhost:8081/stats
+
+curl -fsS "http://localhost:9200/_cluster/health?pretty"
+docker compose -f deployments/docker-compose.yml exec kafka \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Generate data so the dashboard has logs and charts to display:
+
+```bash
+make build
+./bin/log-generator \
+  --target http://localhost:8080/v1/logs \
+  --clients 4 \
+  --tps 500 \
+  --duration 30s \
+  --batch-size 100 \
+  --mode steady
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+Use the dashboard pages as follows:
+
+- Overview: service health, CPU/RAM, accepted records, overload mode, Kafka, and Elasticsearch state
+- Logs: filter indexed logs by IP, path, status, and time range
+- Real-time: watch newly indexed logs stream into the UI while the generator is running
+
+Stop the stack:
+
+```bash
+docker compose -f deployments/docker-compose.yml --profile app down
+```
+
 Submit a test log batch:
 
 ```bash
@@ -206,7 +297,7 @@ docker compose -f deployments/docker-compose.yml ps
 curl -fsS "http://localhost:9200/_cluster/health?pretty"
 curl -fsS "http://localhost:9200/_index_template/logs-template?pretty"
 docker compose -f deployments/docker-compose.yml exec kafka \
-  /opt/bitnami/kafka/bin/kafka-topics.sh \
+  /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 \
   --list
 ```

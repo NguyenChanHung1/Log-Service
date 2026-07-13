@@ -9,7 +9,7 @@ docker compose -f "${COMPOSE_FILE}" ps
 echo
 echo "Kafka topics:"
 docker compose -f "${COMPOSE_FILE}" exec kafka \
-  /opt/bitnami/kafka/bin/kafka-topics.sh \
+  /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 \
   --list
 

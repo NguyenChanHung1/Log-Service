@@ -8,7 +8,7 @@ RETENTION_MS="${KAFKA_TOPIC_RETENTION_MS:-259200000}"
 create_topic() {
   local topic="$1"
 
-  /opt/bitnami/kafka/bin/kafka-topics.sh \
+  /opt/kafka/bin/kafka-topics.sh \
     --bootstrap-server "${BOOTSTRAP_SERVER}" \
     --create \
     --if-not-exists \
@@ -22,6 +22,6 @@ create_topic "${KAFKA_LOG_TOPIC:-logs.raw}"
 create_topic "${KAFKA_RETRY_TOPIC:-logs.retry}"
 create_topic "${KAFKA_DLQ_TOPIC:-logs.dlq}"
 
-/opt/bitnami/kafka/bin/kafka-topics.sh \
+/opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server "${BOOTSTRAP_SERVER}" \
   --list
